@@ -78,6 +78,48 @@ impl TryFrom<&[&str]> for PriceUpdate {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct ExchangeRateRequest {
+    source_exchange: Exchange,
+    source_currency: Currency,
+    destination_exchange: Exchange,
+    destination_currency: Currency,
+}
+
+#[derive(Debug, Clone, From)]
+enum ExchangeRateRequestParseError {
+    SourceExchange,
+    SourceCurrency,
+    DestinationExchange,
+    DestinationCurrency,
+}
+
+impl TryFrom<&[&str]> for ExchangeRateRequest {
+    type Error = ExchangeRateRequestParseError;
+
+    fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+        let source_exchange = input
+            .get(0)
+            .ok_or_else(|| ExchangeRateRequestParseError::SourceExchange)?;
+        let source_currency = input
+            .get(1)
+            .ok_or_else(|| ExchangeRateRequestParseError::SourceCurrency)?;
+        let destination_exchange = input
+            .get(2)
+            .ok_or_else(|| ExchangeRateRequestParseError::DestinationExchange)?;
+        let destination_currency = input
+            .get(3)
+            .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrency)?;
+
+        Ok(Self {
+            source_exchange: Exchange::from(String::from(*source_exchange)),
+            source_currency: Currency::from(String::from(*source_currency)),
+            destination_exchange: Exchange::from(String::from(*destination_exchange)),
+            destination_currency: Currency::from(String::from(*destination_currency)),
+        })
+    }
+}
+
 macro_rules! statusln {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)] {
