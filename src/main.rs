@@ -93,6 +93,7 @@ struct ExchangeRateRequest {
 
 #[derive(Debug, Clone, From)]
 enum ExchangeRateRequestParseError {
+    Invalid,
     SourceExchange,
     SourceCurrency,
     DestinationExchange,
@@ -103,6 +104,10 @@ impl TryFrom<&[&str]> for ExchangeRateRequest {
     type Error = ExchangeRateRequestParseError;
 
     fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+        if input.len() > 4 {
+            return Err(ExchangeRateRequestParseError::Invalid);
+        }
+
         let source_exchange = input
             .get(0)
             .ok_or_else(|| ExchangeRateRequestParseError::SourceExchange)?;
