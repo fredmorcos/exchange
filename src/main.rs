@@ -8,7 +8,7 @@ use std::io::{self, BufRead};
 use std::ops::Deref;
 use std::str::FromStr;
 
-macro_rules! deref {
+macro_rules! deref_impl {
     ($src:ty, $dst:ty) => {
         impl Deref for $src {
             type Target = $dst;
@@ -23,17 +23,17 @@ macro_rules! deref {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From, Into)]
 struct Exchange(String);
 
-deref!(Exchange, String);
+deref_impl!(Exchange, String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From, Into)]
 struct Currency(String);
 
-deref!(Currency, String);
+deref_impl!(Currency, String);
 
 #[derive(Debug, Clone, Copy, PartialEq, From, Into)]
 struct Factor(Decimal);
 
-deref!(Factor, Decimal);
+deref_impl!(Factor, Decimal);
 
 #[derive(Debug, Clone, PartialEq)]
 struct PriceUpdate {
