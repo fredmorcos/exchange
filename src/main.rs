@@ -5,12 +5,11 @@ use derive_more::{From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use std::convert::TryFrom;
 use std::io::{self, BufRead};
-use std::ops::Deref;
 use std::str::FromStr;
 
 macro_rules! deref_impl {
     ($src:ty, $dst:ty) => {
-        impl Deref for $src {
+        impl std::ops::Deref for $src {
             type Target = $dst;
 
             fn deref(&self) -> &Self::Target {
