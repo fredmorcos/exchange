@@ -3,6 +3,7 @@
 use chrono::{self, DateTime};
 use derive_more::{Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
+use rust_decimal_macros::dec;
 use std::convert::TryFrom;
 use std::fmt;
 use std::io::{self, BufRead};
@@ -78,10 +79,12 @@ enum PriceUpdateParseError {
     SourceCurrencyMissing,
     DestinationCurrencyMissing,
     ForwardFactorMissing,
+    ForwardFactorInvalid,
     ForwardFactor(decimal::Error),
     BackwardFactorMissing,
+    BackwardFactorInvalid,
     BackwardFactor(decimal::Error),
-    InvalidFactors,
+    FactorsInvalid,
 }
 
 impl TryFrom<&[&str]> for PriceUpdate {
@@ -116,8 +119,20 @@ impl TryFrom<&[&str]> for PriceUpdate {
         let backward_factor =
             Decimal::from_str(backward_factor).map_err(PriceUpdateParseError::BackwardFactor)?;
 
-        if forward_factor * backward_factor > Decimal::new(1, 0) {
-            return Err(PriceUpdateParseError::InvalidFactors);
+        static DECIMAL_ONE: Decimal = dec!(1.0);
+
+        if forward_factor * backward_factor > DECIMAL_ONE {
+            return Err(PriceUpdateParseError::FactorsInvalid);
+        }
+
+        if source_currency == destination_currency {
+            if forward_factor != DECIMAL_ONE {
+                return Err(PriceUpdateParseError::ForwardFactorInvalid);
+            }
+
+            if backward_factor != DECIMAL_ONE {
+                return Err(PriceUpdateParseError::BackwardFactorInvalid);
+            }
         }
 
         Ok(Self {
