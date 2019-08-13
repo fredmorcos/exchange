@@ -183,7 +183,7 @@ fn main() -> Result<(), ApplicationError> {
             break;
         }
 
-        let input: Vec<&str> = buffer.split_whitespace().collect();
+        let input: Vec<&str> = buffer.trim().split_whitespace().collect();
         let first_field = input.get(0).ok_or_else(|| ApplicationError::InvalidEvent)?;
 
         if *first_field == "EXCHANGE_RATE_REQUEST" {
@@ -191,6 +191,8 @@ fn main() -> Result<(), ApplicationError> {
         } else {
             let _event = PriceUpdate::try_from(&input[0..])?;
         }
+
+        buffer.clear();
     }
 
     Ok(())
