@@ -28,6 +28,7 @@ struct PriceUpdate {
 
 #[derive(Debug, Clone, From)]
 enum PriceUpdateParseError {
+    Invalid,
     TimestampMissing,
     Timestamp(chrono::ParseError),
     ExchangeMissing,
@@ -43,6 +44,10 @@ impl TryFrom<&[&str]> for PriceUpdate {
     type Error = PriceUpdateParseError;
 
     fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+        if input.len() > 6 {
+            return Err(PriceUpdateParseError::Invalid);
+        }
+
         let timestamp = input
             .get(0)
             .ok_or_else(|| PriceUpdateParseError::TimestampMissing)?;
