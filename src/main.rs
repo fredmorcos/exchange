@@ -1,29 +1,18 @@
 #![warn(clippy::all)]
 
 use chrono::{self, DateTime};
-use derive_more::{Display, From, Into};
+use derive_more::{Deref, Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use rust_decimal_macros::dec;
+use std::borrow::Cow;
 use std::collections::HashMap as Map;
+use std::convert::From;
 use std::convert::TryFrom;
 use std::fmt;
 use std::io::{self, BufRead};
 use std::str::FromStr;
-use std::sync::Arc;
 
 static DECIMAL_ONE: Decimal = dec!(1.0);
-
-macro_rules! deref_impl {
-    ($src:ty, $dst:ty) => {
-        impl std::ops::Deref for $src {
-            type Target = $dst;
-
-            fn deref(&self) -> &Self::Target {
-                &self.0
-            }
-        }
-    };
-}
 
 macro_rules! debug_impl {
     ($name:ty) => {
@@ -35,22 +24,19 @@ macro_rules! debug_impl {
     };
 }
 
-#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into)]
-struct Exchange(Arc<String>);
+#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into, Deref)]
+struct Exchange<'a>(Cow<'a, str>);
 
-deref_impl!(Exchange, String);
-debug_impl!(Exchange);
+debug_impl!(Exchange<'_>);
 
-#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into)]
-struct Currency(Arc<String>);
+#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into, Deref)]
+struct Currency<'a>(Cow<'a, str>);
 
-deref_impl!(Currency, String);
-debug_impl!(Currency);
+debug_impl!(Currency<'_>);
 
 #[derive(Display, Clone, Copy, PartialEq, From, Into)]
 struct Factor(Decimal);
 
-deref_impl!(Factor, Decimal);
 debug_impl!(Factor);
 
 type Timestamp = DateTime<chrono::FixedOffset>;
@@ -65,11 +51,11 @@ type Timestamp = DateTime<chrono::FixedOffset>;
     forward_factor,
     backward_factor
 )]
-struct PriceUpdate {
+struct PriceUpdate<'a> {
     timestamp: Timestamp,
-    exchange: Exchange,
-    source_currency: Currency,
-    destination_currency: Currency,
+    exchange: Exchange<'a>,
+    source_currency: Currency<'a>,
+    destination_currency: Currency<'a>,
     forward_factor: Factor,
     backward_factor: Factor,
 }
@@ -91,7 +77,7 @@ enum PriceUpdateParseError {
     FactorsInvalid,
 }
 
-impl TryFrom<&[&str]> for PriceUpdate {
+impl TryFrom<&[&str]> for PriceUpdate<'_> {
     type Error = PriceUpdateParseError;
 
     fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
@@ -139,9 +125,9 @@ impl TryFrom<&[&str]> for PriceUpdate {
 
         Ok(Self {
             timestamp: Timestamp::parse_from_rfc3339(timestamp)?,
-            exchange: Exchange::from(Arc::new(String::from(*exchange))),
-            source_currency: Currency::from(Arc::new(String::from(*source_currency))),
-            destination_currency: Currency::from(Arc::new(String::from(*destination_currency))),
+            exchange: Exchange(Cow::from(String::from(*exchange))),
+            source_currency: Currency::from(Cow::from(String::from(*source_currency))),
+            destination_currency: Currency::from(Cow::from(String::from(*destination_currency))),
             forward_factor: Factor::from(forward_factor),
             backward_factor: Factor::from(backward_factor),
         })
@@ -156,11 +142,11 @@ impl TryFrom<&[&str]> for PriceUpdate {
     destination_exchange,
     destination_currency
 )]
-struct ExchangeRateRequest {
-    source_exchange: Exchange,
-    source_currency: Currency,
-    destination_exchange: Exchange,
-    destination_currency: Currency,
+struct ExchangeRateRequest<'a> {
+    source_exchange: Exchange<'a>,
+    source_currency: Currency<'a>,
+    destination_exchange: Exchange<'a>,
+    destination_currency: Currency<'a>,
 }
 
 #[derive(Debug, Clone, From)]
@@ -172,7 +158,7 @@ enum ExchangeRateRequestParseError {
     DestinationCurrency,
 }
 
-impl TryFrom<&[&str]> for ExchangeRateRequest {
+impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
     type Error = ExchangeRateRequestParseError;
 
     fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
@@ -194,18 +180,18 @@ impl TryFrom<&[&str]> for ExchangeRateRequest {
             .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrency)?;
 
         Ok(Self {
-            source_exchange: Exchange::from(Arc::new(String::from(*source_exchange))),
-            source_currency: Currency::from(Arc::new(String::from(*source_currency))),
-            destination_exchange: Exchange::from(Arc::new(String::from(*destination_exchange))),
-            destination_currency: Currency::from(Arc::new(String::from(*destination_currency))),
+            source_exchange: Exchange::from(Cow::from(String::from(*source_exchange))),
+            source_currency: Currency::from(Cow::from(String::from(*source_currency))),
+            destination_exchange: Exchange::from(Cow::from(String::from(*destination_exchange))),
+            destination_currency: Currency::from(Cow::from(String::from(*destination_currency))),
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Path {
-    exchange: Exchange,
-    currency: Currency,
+struct Path<'a> {
+    exchange: Exchange<'a>,
+    currency: Currency<'a>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -215,11 +201,11 @@ struct Info {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-struct Graph {
-    exchanges: Map<Exchange, Map<Currency, Map<Path, Info>>>,
+struct Graph<'a> {
+    exchanges: Map<Exchange<'a>, Map<Currency<'a>, Map<Path<'a>, Info>>>,
 }
 
-impl fmt::Display for Graph {
+impl fmt::Display for Graph<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "«")?;
 
@@ -241,13 +227,13 @@ impl fmt::Display for Graph {
     }
 }
 
-impl Graph {
+impl<'a> Graph<'a> {
     fn add_edge(
         &mut self,
-        source_exchange: Exchange,
-        source_currency: Currency,
-        destination_exchange: Exchange,
-        destination_currency: Currency,
+        source_exchange: Exchange<'a>,
+        source_currency: Currency<'a>,
+        destination_exchange: Exchange<'a>,
+        destination_currency: Currency<'a>,
         factor: Factor,
         timestamp: Timestamp,
     ) -> &mut Info {
@@ -267,7 +253,7 @@ impl Graph {
             .or_insert_with(|| info)
     }
 
-    fn price_update(&mut self, price_update: PriceUpdate) {
+    fn price_update(&mut self, price_update: PriceUpdate<'a>) {
         let info = self.add_edge(
             price_update.exchange.clone(),
             price_update.source_currency.clone(),
