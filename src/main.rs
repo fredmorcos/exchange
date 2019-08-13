@@ -139,23 +139,33 @@ macro_rules! statusln {
     };
 }
 
-fn main() -> io::Result<()> {
+#[derive(Debug, From)]
+enum ApplicationError {
+    IO(io::Error),
+    InvalidEvent,
+    InvalidExchangeRateRequest(ExchangeRateRequestParseError),
+    InvalidPriceUpdate(PriceUpdateParseError),
+}
+
+fn main() -> Result<(), ApplicationError> {
     let stdin = io::stdin();
     let mut stdin_handle = stdin.lock();
 
     let mut buffer = String::new();
 
     loop {
-        match stdin_handle.read_line(&mut buffer) {
-            Ok(0) => {
-                statusln!("Closing...");
-                break;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Error: {}, closing...", e);
-                break;
-            }
+        if stdin_handle.read_line(&mut buffer)? == 0 {
+            statusln!("Closing...");
+            break;
+        }
+
+        let input: Vec<&str> = buffer.split_whitespace().collect();
+        let first_field = input.get(0).ok_or_else(|| ApplicationError::InvalidEvent)?;
+
+        if *first_field == "EXCHANGE_RATE_REQUEST" {
+            let _event = ExchangeRateRequest::try_from(&input[1..])?;
+        } else {
+            let _event = PriceUpdate::try_from(&input[0..])?;
         }
     }
 
