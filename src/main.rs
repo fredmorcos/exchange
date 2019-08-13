@@ -5,16 +5,35 @@ use derive_more::{From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use std::convert::TryFrom;
 use std::io::{self, BufRead};
+use std::ops::Deref;
 use std::str::FromStr;
+
+macro_rules! deref {
+    ($src:ty, $dst:ty) => {
+        impl Deref for $src {
+            type Target = $dst;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+    };
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From, Into)]
 struct Exchange(String);
 
+deref!(Exchange, String);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From, Into)]
 struct Currency(String);
 
+deref!(Currency, String);
+
 #[derive(Debug, Clone, Copy, PartialEq, From, Into)]
 struct Factor(Decimal);
+
+deref!(Factor, Decimal);
 
 #[derive(Debug, Clone, PartialEq)]
 struct PriceUpdate {
