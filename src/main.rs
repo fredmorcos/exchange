@@ -57,6 +57,7 @@ enum PriceUpdateParseError {
     ForwardFactor(decimal::Error),
     BackwardFactorMissing,
     BackwardFactor(decimal::Error),
+    InvalidFactors,
 }
 
 impl TryFrom<&[&str]> for PriceUpdate {
@@ -86,18 +87,22 @@ impl TryFrom<&[&str]> for PriceUpdate {
             .get(5)
             .ok_or_else(|| PriceUpdateParseError::BackwardFactorMissing)?;
 
+        let forward_factor =
+            Decimal::from_str(forward_factor).map_err(PriceUpdateParseError::ForwardFactor)?;
+        let backward_factor =
+            Decimal::from_str(backward_factor).map_err(PriceUpdateParseError::BackwardFactor)?;
+
+        if forward_factor * backward_factor > Decimal::new(1, 0) {
+            return Err(PriceUpdateParseError::InvalidFactors);
+        }
+
         Ok(Self {
             timestamp: DateTime::parse_from_rfc3339(timestamp)?,
             exchange: Exchange::from(String::from(*exchange)),
             source_currency: Currency::from(String::from(*source_currency)),
             destination_currency: Currency::from(String::from(*destination_currency)),
-            forward_factor: Factor::from(
-                Decimal::from_str(forward_factor).map_err(PriceUpdateParseError::ForwardFactor)?,
-            ),
-            backward_factor: Factor::from(
-                Decimal::from_str(backward_factor)
-                    .map_err(PriceUpdateParseError::BackwardFactor)?,
-            ),
+            forward_factor: Factor::from(forward_factor),
+            backward_factor: Factor::from(backward_factor),
         })
     }
 }
