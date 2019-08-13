@@ -35,9 +35,11 @@ struct Factor(Decimal);
 
 deref_impl!(Factor, Decimal);
 
+type Timestamp = DateTime<chrono::FixedOffset>;
+
 #[derive(Debug, Clone, PartialEq)]
 struct PriceUpdate {
-    timestamp: DateTime<chrono::FixedOffset>,
+    timestamp: Timestamp,
     exchange: Exchange,
     source_currency: Currency,
     destination_currency: Currency,
@@ -97,7 +99,7 @@ impl TryFrom<&[&str]> for PriceUpdate {
         }
 
         Ok(Self {
-            timestamp: DateTime::parse_from_rfc3339(timestamp)?,
+            timestamp: Timestamp::parse_from_rfc3339(timestamp)?,
             exchange: Exchange::from(String::from(*exchange)),
             source_currency: Currency::from(String::from(*source_currency)),
             destination_currency: Currency::from(String::from(*destination_currency)),
