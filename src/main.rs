@@ -4,10 +4,14 @@ use chrono::{self, DateTime};
 use derive_more::{Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use rust_decimal_macros::dec;
+use std::collections::HashMap as Map;
 use std::convert::TryFrom;
 use std::fmt;
 use std::io::{self, BufRead};
 use std::str::FromStr;
+use std::sync::Arc;
+
+static DECIMAL_ONE: Decimal = dec!(1.0);
 
 macro_rules! deref_impl {
     ($src:ty, $dst:ty) => {
@@ -32,13 +36,13 @@ macro_rules! debug_impl {
 }
 
 #[derive(Display, Clone, PartialEq, Eq, Hash, From, Into)]
-struct Exchange(String);
+struct Exchange(Arc<String>);
 
 deref_impl!(Exchange, String);
 debug_impl!(Exchange);
 
 #[derive(Display, Clone, PartialEq, Eq, Hash, From, Into)]
-struct Currency(String);
+struct Currency(Arc<String>);
 
 deref_impl!(Currency, String);
 debug_impl!(Currency);
@@ -119,8 +123,6 @@ impl TryFrom<&[&str]> for PriceUpdate {
         let backward_factor =
             Decimal::from_str(backward_factor).map_err(PriceUpdateParseError::BackwardFactor)?;
 
-        static DECIMAL_ONE: Decimal = dec!(1.0);
-
         if forward_factor * backward_factor > DECIMAL_ONE {
             return Err(PriceUpdateParseError::FactorsInvalid);
         }
@@ -137,9 +139,9 @@ impl TryFrom<&[&str]> for PriceUpdate {
 
         Ok(Self {
             timestamp: Timestamp::parse_from_rfc3339(timestamp)?,
-            exchange: Exchange::from(String::from(*exchange)),
-            source_currency: Currency::from(String::from(*source_currency)),
-            destination_currency: Currency::from(String::from(*destination_currency)),
+            exchange: Exchange::from(Arc::new(String::from(*exchange))),
+            source_currency: Currency::from(Arc::new(String::from(*source_currency))),
+            destination_currency: Currency::from(Arc::new(String::from(*destination_currency))),
             forward_factor: Factor::from(forward_factor),
             backward_factor: Factor::from(backward_factor),
         })
@@ -192,11 +194,178 @@ impl TryFrom<&[&str]> for ExchangeRateRequest {
             .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrency)?;
 
         Ok(Self {
-            source_exchange: Exchange::from(String::from(*source_exchange)),
-            source_currency: Currency::from(String::from(*source_currency)),
-            destination_exchange: Exchange::from(String::from(*destination_exchange)),
-            destination_currency: Currency::from(String::from(*destination_currency)),
+            source_exchange: Exchange::from(Arc::new(String::from(*source_exchange))),
+            source_currency: Currency::from(Arc::new(String::from(*source_currency))),
+            destination_exchange: Exchange::from(Arc::new(String::from(*destination_exchange))),
+            destination_currency: Currency::from(Arc::new(String::from(*destination_currency))),
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct Path {
+    exchange: Exchange,
+    currency: Currency,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Info {
+    factor: Factor,
+    timestamp: Timestamp,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+struct Graph {
+    exchanges: Map<Exchange, Map<Currency, Map<Path, Info>>>,
+}
+
+impl fmt::Display for Graph {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "«")?;
+
+        for (exchange, currencies) in &self.exchanges {
+            writeln!(f, "{}", exchange)?;
+
+            for (currency, edge) in currencies {
+                for (dst, info) in edge {
+                    writeln!(
+                        f,
+                        "  {} ┈{}⤑ {}({}) @{}",
+                        currency, info.factor, dst.exchange, dst.currency, info.timestamp
+                    )?;
+                }
+            }
+        }
+
+        write!(f, "»")
+    }
+}
+
+impl Graph {
+    fn add_edge(
+        &mut self,
+        source_exchange: Exchange,
+        source_currency: Currency,
+        destination_exchange: Exchange,
+        destination_currency: Currency,
+        factor: Factor,
+        timestamp: Timestamp,
+    ) -> &mut Info {
+        let destination = Path {
+            exchange: destination_exchange,
+            currency: destination_currency,
+        };
+
+        let info = Info { factor, timestamp };
+
+        self.exchanges
+            .entry(source_exchange)
+            .or_insert_with(Map::new)
+            .entry(source_currency)
+            .or_insert_with(Map::new)
+            .entry(destination)
+            .or_insert_with(|| info)
+    }
+
+    fn price_update(&mut self, price_update: PriceUpdate) {
+        let info = self.add_edge(
+            price_update.exchange.clone(),
+            price_update.source_currency.clone(),
+            price_update.exchange.clone(),
+            price_update.destination_currency.clone(),
+            price_update.forward_factor,
+            price_update.timestamp,
+        );
+
+        if info.timestamp < price_update.timestamp {
+            info.factor = price_update.forward_factor;
+            info.timestamp = price_update.timestamp;
+        }
+
+        let info = self.add_edge(
+            price_update.exchange.clone(),
+            price_update.destination_currency.clone(),
+            price_update.exchange.clone(),
+            price_update.source_currency.clone(),
+            price_update.backward_factor,
+            price_update.timestamp,
+        );
+
+        if info.timestamp < price_update.timestamp {
+            info.factor = price_update.backward_factor;
+            info.timestamp = price_update.timestamp;
+        }
+
+        let other_exchanges: Vec<Exchange> = self
+            .exchanges
+            .keys()
+            .filter(|&e| e != &price_update.exchange.clone())
+            .cloned()
+            .collect();
+
+        static FACTOR_DECIMAL_ONE: Factor = Factor(DECIMAL_ONE);
+
+        for other_exchange in other_exchanges {
+            let info = self.add_edge(
+                price_update.exchange.clone(),
+                price_update.source_currency.clone(),
+                other_exchange.clone(),
+                price_update.source_currency.clone(),
+                FACTOR_DECIMAL_ONE,
+                price_update.timestamp,
+            );
+
+            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+
+            if info.timestamp < price_update.timestamp {
+                info.timestamp = price_update.timestamp;
+            }
+
+            let info = self.add_edge(
+                price_update.exchange.clone(),
+                price_update.destination_currency.clone(),
+                other_exchange.clone(),
+                price_update.destination_currency.clone(),
+                FACTOR_DECIMAL_ONE,
+                price_update.timestamp,
+            );
+
+            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+
+            if info.timestamp < price_update.timestamp {
+                info.timestamp = price_update.timestamp;
+            }
+
+            let info = self.add_edge(
+                other_exchange.clone(),
+                price_update.source_currency.clone(),
+                price_update.exchange.clone(),
+                price_update.source_currency.clone(),
+                FACTOR_DECIMAL_ONE,
+                price_update.timestamp,
+            );
+
+            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+
+            if info.timestamp < price_update.timestamp {
+                info.timestamp = price_update.timestamp;
+            }
+
+            let info = self.add_edge(
+                other_exchange,
+                price_update.destination_currency.clone(),
+                price_update.exchange.clone(),
+                price_update.destination_currency.clone(),
+                FACTOR_DECIMAL_ONE,
+                price_update.timestamp,
+            );
+
+            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+
+            if info.timestamp < price_update.timestamp {
+                info.timestamp = price_update.timestamp;
+            }
+        }
     }
 }
 
@@ -222,6 +391,7 @@ fn main() -> Result<(), ApplicationError> {
     let mut stdin_handle = stdin.lock();
 
     let mut buffer = String::new();
+    let mut graph = Graph::default();
 
     loop {
         if stdin_handle.read_line(&mut buffer)? == 0 {
@@ -238,7 +408,10 @@ fn main() -> Result<(), ApplicationError> {
         } else {
             let price_update = PriceUpdate::try_from(&input[0..])?;
             statusln!("{}", price_update);
+            graph.price_update(price_update);
         }
+
+        statusln!("{}", graph);
 
         buffer.clear();
     }
