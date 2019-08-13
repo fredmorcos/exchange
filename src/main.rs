@@ -1,9 +1,10 @@
 #![warn(clippy::all)]
 
 use chrono::{self, DateTime};
-use derive_more::{From, Into};
+use derive_more::{Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use std::convert::TryFrom;
+use std::fmt;
 use std::io::{self, BufRead};
 use std::str::FromStr;
 
@@ -19,24 +20,46 @@ macro_rules! deref_impl {
     };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, From, Into)]
+macro_rules! debug_impl {
+    ($name:ty) => {
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}({:#?})", stringify!($name), self.0)
+            }
+        }
+    };
+}
+
+#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into)]
 struct Exchange(String);
 
 deref_impl!(Exchange, String);
+debug_impl!(Exchange);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, From, Into)]
+#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into)]
 struct Currency(String);
 
 deref_impl!(Currency, String);
+debug_impl!(Currency);
 
-#[derive(Debug, Clone, Copy, PartialEq, From, Into)]
+#[derive(Display, Clone, Copy, PartialEq, From, Into)]
 struct Factor(Decimal);
 
 deref_impl!(Factor, Decimal);
+debug_impl!(Factor);
 
 type Timestamp = DateTime<chrono::FixedOffset>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq)]
+#[display(
+    fmt = "PRICE UPDATE {} {} {} {} {} {}",
+    timestamp,
+    exchange,
+    source_currency,
+    destination_currency,
+    forward_factor,
+    backward_factor
+)]
 struct PriceUpdate {
     timestamp: Timestamp,
     exchange: Exchange,
@@ -108,7 +131,14 @@ impl TryFrom<&[&str]> for PriceUpdate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq)]
+#[display(
+    fmt = "EXCHANGE RATE REQUEST {}({}) {}({})",
+    source_exchange,
+    source_currency,
+    destination_exchange,
+    destination_currency
+)]
 struct ExchangeRateRequest {
     source_exchange: Exchange,
     source_currency: Currency,
@@ -188,9 +218,11 @@ fn main() -> Result<(), ApplicationError> {
         let first_field = input.get(0).ok_or_else(|| ApplicationError::InvalidEvent)?;
 
         if *first_field == "EXCHANGE_RATE_REQUEST" {
-            let _event = ExchangeRateRequest::try_from(&input[1..])?;
+            let exchange_rate_request = ExchangeRateRequest::try_from(&input[1..])?;
+            statusln!("{}", exchange_rate_request);
         } else {
-            let _event = PriceUpdate::try_from(&input[0..])?;
+            let price_update = PriceUpdate::try_from(&input[0..])?;
+            statusln!("{}", price_update);
         }
 
         buffer.clear();
