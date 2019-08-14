@@ -225,18 +225,25 @@ impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
     }
 }
 
+/// A Path is like a marker that identifies an (Exchange, Currency) pair.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Path<'a> {
     exchange: Exchange<'a>,
     currency: Currency<'a>,
 }
 
+/// Info is information about an edge: the factor value and the timestamp of the price
+/// update that created or last updated it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Info {
     factor: Factor,
     timestamp: Timestamp,
 }
 
+/// The Graph is just a list of Exchanges and their corresponding information as follows:
+/// an Exchange has a list of Currencies, and each Currency has a list of edges to other
+/// (Exchange, Currency) pairs and on each edge there is exchange rate information (the
+/// Info structure: factor and timestamp).
 #[derive(Debug, Default, Clone, PartialEq)]
 struct Graph<'a> {
     exchanges: Map<Exchange<'a>, Map<Currency<'a>, Map<Path<'a>, Info>>>,
@@ -265,6 +272,11 @@ impl fmt::Display for Graph<'_> {
 }
 
 impl<'a> Graph<'a> {
+    /// Insert an edge into the Graph. The edge will be inserted if it is not already in
+    /// the graph and a mutable reference to the Info structure comprising of the factor
+    /// and timestamp parameters will be returned. However, if the edge is already in the
+    /// graph, then a mutable reference to the corresponding Info structure will be
+    /// returned instead.
     fn add_edge(
         &mut self,
         source_exchange: Exchange<'a>,
@@ -274,6 +286,7 @@ impl<'a> Graph<'a> {
         factor: Factor,
         timestamp: Timestamp,
     ) -> &mut Info {
+        // Create the (Exchange, Currency) pair.
         let destination = Path {
             exchange: destination_exchange,
             currency: destination_currency,
@@ -281,6 +294,7 @@ impl<'a> Graph<'a> {
 
         let info = Info { factor, timestamp };
 
+        // Insert or return the already available Info structure.
         self.exchanges
             .entry(source_exchange)
             .or_insert_with(Map::new)
@@ -290,35 +304,43 @@ impl<'a> Graph<'a> {
             .or_insert_with(|| info)
     }
 
+    /// Update the graph from a price update event.
     fn price_update(&mut self, price_update: PriceUpdate<'a>) {
-        let info = self.add_edge(
-            price_update.exchange.clone(),
-            price_update.source_currency.clone(),
-            price_update.exchange.clone(),
-            price_update.destination_currency.clone(),
-            price_update.forward_factor,
-            price_update.timestamp,
-        );
+        // Insert the E:SourceC -> E:DestinationC edge with the forward factor.
+        {
+            let info = self.add_edge(
+                price_update.exchange.clone(),
+                price_update.source_currency.clone(),
+                price_update.exchange.clone(),
+                price_update.destination_currency.clone(),
+                price_update.forward_factor,
+                price_update.timestamp,
+            );
 
-        if info.timestamp < price_update.timestamp {
-            info.factor = price_update.forward_factor;
-            info.timestamp = price_update.timestamp;
+            if info.timestamp < price_update.timestamp {
+                info.factor = price_update.forward_factor;
+                info.timestamp = price_update.timestamp;
+            }
         }
 
-        let info = self.add_edge(
-            price_update.exchange.clone(),
-            price_update.destination_currency.clone(),
-            price_update.exchange.clone(),
-            price_update.source_currency.clone(),
-            price_update.backward_factor,
-            price_update.timestamp,
-        );
+        // Insert the E:DestinationC -> E:SourceC edge with the backward factor.
+        {
+            let info = self.add_edge(
+                price_update.exchange.clone(),
+                price_update.destination_currency.clone(),
+                price_update.exchange.clone(),
+                price_update.source_currency.clone(),
+                price_update.backward_factor,
+                price_update.timestamp,
+            );
 
-        if info.timestamp < price_update.timestamp {
-            info.factor = price_update.backward_factor;
-            info.timestamp = price_update.timestamp;
+            if info.timestamp < price_update.timestamp {
+                info.factor = price_update.backward_factor;
+                info.timestamp = price_update.timestamp;
+            }
         }
 
+        // The list of all other exchanges.
         let other_exchanges: Vec<Exchange> = self
             .exchanges
             .keys()
@@ -327,64 +349,76 @@ impl<'a> Graph<'a> {
             .collect();
 
         for other_exchange in other_exchanges {
-            let info = self.add_edge(
-                price_update.exchange.clone(),
-                price_update.source_currency.clone(),
-                other_exchange.clone(),
-                price_update.source_currency.clone(),
-                DECIMAL_ONE,
-                price_update.timestamp,
-            );
+            // Insert the E:SourceC -> E':SourceC edge with a factor of 1.0.
+            {
+                let info = self.add_edge(
+                    price_update.exchange.clone(),
+                    price_update.source_currency.clone(),
+                    other_exchange.clone(),
+                    price_update.source_currency.clone(),
+                    DECIMAL_ONE,
+                    price_update.timestamp,
+                );
 
-            assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.factor, DECIMAL_ONE);
 
-            if info.timestamp < price_update.timestamp {
-                info.timestamp = price_update.timestamp;
+                if info.timestamp < price_update.timestamp {
+                    info.timestamp = price_update.timestamp;
+                }
             }
 
-            let info = self.add_edge(
-                price_update.exchange.clone(),
-                price_update.destination_currency.clone(),
-                other_exchange.clone(),
-                price_update.destination_currency.clone(),
-                DECIMAL_ONE,
-                price_update.timestamp,
-            );
+            // Insert the E:DestinationC -> E':DestinationC edge with a factor of 1.0
+            {
+                let info = self.add_edge(
+                    price_update.exchange.clone(),
+                    price_update.destination_currency.clone(),
+                    other_exchange.clone(),
+                    price_update.destination_currency.clone(),
+                    DECIMAL_ONE,
+                    price_update.timestamp,
+                );
 
-            assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.factor, DECIMAL_ONE);
 
-            if info.timestamp < price_update.timestamp {
-                info.timestamp = price_update.timestamp;
+                if info.timestamp < price_update.timestamp {
+                    info.timestamp = price_update.timestamp;
+                }
             }
 
-            let info = self.add_edge(
-                other_exchange.clone(),
-                price_update.source_currency.clone(),
-                price_update.exchange.clone(),
-                price_update.source_currency.clone(),
-                DECIMAL_ONE,
-                price_update.timestamp,
-            );
+            // Insert the E':SourceC -> E:SourceC edge with a factor of 1.0
+            {
+                let info = self.add_edge(
+                    other_exchange.clone(),
+                    price_update.source_currency.clone(),
+                    price_update.exchange.clone(),
+                    price_update.source_currency.clone(),
+                    DECIMAL_ONE,
+                    price_update.timestamp,
+                );
 
-            assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.factor, DECIMAL_ONE);
 
-            if info.timestamp < price_update.timestamp {
-                info.timestamp = price_update.timestamp;
+                if info.timestamp < price_update.timestamp {
+                    info.timestamp = price_update.timestamp;
+                }
             }
 
-            let info = self.add_edge(
-                other_exchange,
-                price_update.destination_currency.clone(),
-                price_update.exchange.clone(),
-                price_update.destination_currency.clone(),
-                DECIMAL_ONE,
-                price_update.timestamp,
-            );
+            // Insert the E':DestinationC -> E:DefinationC edge with a factor of 1.0.
+            {
+                let info = self.add_edge(
+                    other_exchange,
+                    price_update.destination_currency.clone(),
+                    price_update.exchange.clone(),
+                    price_update.destination_currency.clone(),
+                    DECIMAL_ONE,
+                    price_update.timestamp,
+                );
 
-            assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.factor, DECIMAL_ONE);
 
-            if info.timestamp < price_update.timestamp {
-                info.timestamp = price_update.timestamp;
+                if info.timestamp < price_update.timestamp {
+                    info.timestamp = price_update.timestamp;
+                }
             }
         }
     }
