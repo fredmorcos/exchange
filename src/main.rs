@@ -45,6 +45,7 @@ type Factor = Decimal;
 /// A timestamp with offset.
 type Timestamp = DateTime<chrono::FixedOffset>;
 
+/// Price updates will come as follows: TS EX SRC_C DST_C FW_FAC BW_FAC.
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display(
     fmt = "PRICE UPDATE {} {} {} {} {} {}",
