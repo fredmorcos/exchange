@@ -179,10 +179,15 @@ struct ExchangeRateRequest<'a> {
 
 #[derive(Debug, Clone, From)]
 enum ExchangeRateRequestParseError {
+    /// When the input has more than 4 fields.
     Invalid,
+    /// If the source exchange field is missing.
     SourceExchangeMissing,
+    /// If the source currency field is missing.
     SourceCurrencyMissing,
+    /// If the destination exchange field is missing.
     DestinationExchangeMissing,
+    /// If the destination currency field is missing.
     DestinationCurrencyMissing,
 }
 
@@ -190,10 +195,13 @@ impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
     type Error = ExchangeRateRequestParseError;
 
     fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+        // Check that the input has at most 4 fields.
         if input.len() > 4 {
             return Err(ExchangeRateRequestParseError::Invalid);
         }
 
+        // Get each field and if it cannot be found, return the corresponding
+        // field-missing error.
         let source_exchange = input
             .get(0)
             .ok_or_else(|| ExchangeRateRequestParseError::SourceExchangeMissing)?;
@@ -207,6 +215,7 @@ impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
             .get(3)
             .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrencyMissing)?;
 
+        // Return the constructed exchange rate request structure.
         Ok(Self {
             source_exchange: Exchange::from(Cow::from(String::from(*source_exchange))),
             source_currency: Currency::from(Cow::from(String::from(*source_currency))),
