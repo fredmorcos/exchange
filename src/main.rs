@@ -1,15 +1,65 @@
 #![warn(clippy::all)]
 
 use chrono::{self, DateTime};
-use derive_more::{Deref, Display, From, Into};
+use derive_more::{Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use rust_decimal_macros::dec;
-use std::borrow::Cow;
 use std::collections::HashMap as Map;
-use std::convert::{From, TryFrom};
+use std::convert::From;
 use std::fmt;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 use std::str::FromStr;
+
+#[derive(Debug, Clone)]
+struct StringPool<I> {
+    strings: Vec<Rc<String>>,
+    indexes: Map<Rc<String>, I>,
+}
+
+impl<I> Default for StringPool<I> {
+    fn default() -> Self {
+        Self {
+            strings: Vec::default(),
+            indexes: Map::default(),
+        }
+    }
+}
+
+impl<I: Into<usize>> fmt::Display for StringPool<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "«")?;
+        for (i, v) in self.strings.iter().enumerate() {
+            writeln!(f, "  {:<4} ⤑ {}", i, v)?;
+        }
+        write!(f, "»")
+    }
+}
+
+impl<I: From<usize> + Copy> StringPool<I> {
+    fn add(&mut self, s: String) -> I {
+        if let Some(index) = self.indexes.get(&s) {
+            *index
+        } else {
+            let index = I::from(self.strings.len());
+            let s = Rc::new(s);
+            self.strings.push(s.clone());
+            self.indexes.insert(s, index);
+            index
+        }
+    }
+
+    fn add_str(&mut self, s: &str) -> I {
+        self.add(String::from(s))
+    }
+
+    fn get(&self, index: I) -> &str
+    where
+        usize: From<I>,
+    {
+        &self.strings[usize::from(index)]
+    }
+}
 
 /// A decimal 1.0 which we need to reuse a few times.
 static DECIMAL_ONE: Decimal = dec!(1.0);
@@ -27,17 +77,17 @@ macro_rules! debug_impl {
 
 /// An Exchange is just a string, but we declare a separate type to avoid potential
 /// mistakes (e.g. pass an Exchange where a Currency is expected).
-#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into, Deref)]
-struct Exchange<'a>(Cow<'a, str>);
+#[derive(Display, Clone, Copy, PartialEq, Eq, Hash, From, Into)]
+struct Exchange(usize);
 
-debug_impl!(Exchange<'_>);
+debug_impl!(Exchange);
 
 /// A Currency is just a string, but we declare a separate type to avoid potential
 /// mistakes (e.g. pass a Currency where an Exchange is expected).
-#[derive(Display, Clone, PartialEq, Eq, Hash, From, Into, Deref)]
-struct Currency<'a>(Cow<'a, str>);
+#[derive(Display, Clone, Copy, PartialEq, Eq, Hash, From, Into)]
+struct Currency(usize);
 
-debug_impl!(Currency<'_>);
+debug_impl!(Currency);
 
 /// A forward or backward factor.
 type Factor = Decimal;
@@ -56,11 +106,11 @@ type Timestamp = DateTime<chrono::FixedOffset>;
     forward_factor,
     backward_factor
 )]
-struct PriceUpdate<'a> {
+struct PriceUpdate {
     timestamp: Timestamp,
-    exchange: Exchange<'a>,
-    source_currency: Currency<'a>,
-    destination_currency: Currency<'a>,
+    exchange: Exchange,
+    source_currency: Currency,
+    destination_currency: Currency,
     forward_factor: Factor,
     backward_factor: Factor,
 }
@@ -95,10 +145,12 @@ enum PriceUpdateParseError {
     FactorsInvalid,
 }
 
-impl TryFrom<&[&str]> for PriceUpdate<'_> {
-    type Error = PriceUpdateParseError;
-
-    fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+impl PriceUpdate {
+    fn parse(
+        input: &[&str],
+        exchange_string_pool: &mut StringPool<Exchange>,
+        currency_string_pool: &mut StringPool<Currency>,
+    ) -> Result<Self, PriceUpdateParseError> {
         // Check that the input has at most 6 fields.
         if input.len() > 6 {
             return Err(PriceUpdateParseError::Invalid);
@@ -152,9 +204,9 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
         // the constructed price update structure.
         Ok(Self {
             timestamp: Timestamp::parse_from_rfc3339(timestamp)?,
-            exchange: Exchange::from(Cow::from(String::from(*exchange))),
-            source_currency: Currency::from(Cow::from(String::from(*source_currency))),
-            destination_currency: Currency::from(Cow::from(String::from(*destination_currency))),
+            exchange: exchange_string_pool.add_str(exchange),
+            source_currency: currency_string_pool.add_str(source_currency),
+            destination_currency: currency_string_pool.add_str(destination_currency),
             forward_factor,
             backward_factor,
         })
@@ -170,11 +222,11 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
     destination_exchange,
     destination_currency
 )]
-struct ExchangeRateRequest<'a> {
-    source_exchange: Exchange<'a>,
-    source_currency: Currency<'a>,
-    destination_exchange: Exchange<'a>,
-    destination_currency: Currency<'a>,
+struct ExchangeRateRequest {
+    source_exchange: Exchange,
+    source_currency: Currency,
+    destination_exchange: Exchange,
+    destination_currency: Currency,
 }
 
 #[derive(Debug, Clone, From)]
@@ -191,10 +243,12 @@ enum ExchangeRateRequestParseError {
     DestinationCurrencyMissing,
 }
 
-impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
-    type Error = ExchangeRateRequestParseError;
-
-    fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+impl ExchangeRateRequest {
+    fn parse(
+        input: &[&str],
+        exchange_string_pool: &mut StringPool<Exchange>,
+        currency_string_pool: &mut StringPool<Currency>,
+    ) -> Result<Self, ExchangeRateRequestParseError> {
         // Check that the input has at most 4 fields.
         if input.len() > 4 {
             return Err(ExchangeRateRequestParseError::Invalid);
@@ -217,19 +271,20 @@ impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
 
         // Return the constructed exchange rate request structure.
         Ok(Self {
-            source_exchange: Exchange::from(Cow::from(String::from(*source_exchange))),
-            source_currency: Currency::from(Cow::from(String::from(*source_currency))),
-            destination_exchange: Exchange::from(Cow::from(String::from(*destination_exchange))),
-            destination_currency: Currency::from(Cow::from(String::from(*destination_currency))),
+            source_exchange: exchange_string_pool.add_str(source_exchange),
+            source_currency: currency_string_pool.add_str(source_currency),
+            destination_exchange: exchange_string_pool.add_str(destination_exchange),
+            destination_currency: currency_string_pool.add_str(destination_currency),
         })
     }
 }
 
-/// A Marker that identifies an (Exchange, Currency) pair.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Marker<'a> {
-    exchange: Exchange<'a>,
-    currency: Currency<'a>,
+/// A Marker that identifies an (Exchange, Currency) pair. A vertex on the graph.
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
+#[display(fmt = "{}({})", exchange, currency)]
+struct Marker {
+    exchange: Exchange,
+    currency: Currency,
 }
 
 /// Info is information about an edge: the factor value and the timestamp of the price
@@ -245,11 +300,11 @@ struct Info {
 /// (Exchange, Currency) pairs and on each edge there is exchange rate information (the
 /// Info structure: factor and timestamp).
 #[derive(Debug, Default, Clone, PartialEq)]
-struct Graph<'a> {
-    exchanges: Map<Exchange<'a>, Map<Currency<'a>, Map<Marker<'a>, Info>>>,
+struct Graph {
+    exchanges: Map<Exchange, Map<Currency, Map<Marker, Info>>>,
 }
 
-impl fmt::Display for Graph<'_> {
+impl fmt::Display for Graph {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "«")?;
 
@@ -271,7 +326,7 @@ impl fmt::Display for Graph<'_> {
     }
 }
 
-impl<'a> Graph<'a> {
+impl Graph {
     /// Insert an edge into the Graph. The edge will be inserted if it is not already in
     /// the graph and a mutable reference to the Info structure comprising of the factor
     /// and timestamp parameters will be returned. However, if the edge is already in the
@@ -279,10 +334,10 @@ impl<'a> Graph<'a> {
     /// returned instead.
     fn add_edge(
         &mut self,
-        source_exchange: Exchange<'a>,
-        source_currency: Currency<'a>,
-        destination_exchange: Exchange<'a>,
-        destination_currency: Currency<'a>,
+        source_exchange: Exchange,
+        source_currency: Currency,
+        destination_exchange: Exchange,
+        destination_currency: Currency,
         rate: Factor,
         timestamp: Timestamp,
     ) -> &mut Info {
@@ -305,14 +360,14 @@ impl<'a> Graph<'a> {
     }
 
     /// Update the graph from a price update event.
-    fn price_update(&mut self, price_update: PriceUpdate<'a>) {
+    fn price_update(&mut self, price_update: PriceUpdate) {
         // Insert the E:SourceC -> E:DestinationC edge with the forward factor.
         {
             let info = self.add_edge(
-                price_update.exchange.clone(),
-                price_update.source_currency.clone(),
-                price_update.exchange.clone(),
-                price_update.destination_currency.clone(),
+                price_update.exchange,
+                price_update.source_currency,
+                price_update.exchange,
+                price_update.destination_currency,
                 price_update.forward_factor,
                 price_update.timestamp,
             );
@@ -326,10 +381,10 @@ impl<'a> Graph<'a> {
         // Insert the E:DestinationC -> E:SourceC edge with the backward factor.
         {
             let info = self.add_edge(
-                price_update.exchange.clone(),
-                price_update.destination_currency.clone(),
-                price_update.exchange.clone(),
-                price_update.source_currency.clone(),
+                price_update.exchange,
+                price_update.destination_currency,
+                price_update.exchange,
+                price_update.source_currency,
                 price_update.backward_factor,
                 price_update.timestamp,
             );
@@ -344,7 +399,7 @@ impl<'a> Graph<'a> {
         let other_exchanges: Vec<Exchange> = self
             .exchanges
             .keys()
-            .filter(|&e| e != &price_update.exchange.clone())
+            .filter(|&e| e != &price_update.exchange)
             .cloned()
             .collect();
 
@@ -352,10 +407,10 @@ impl<'a> Graph<'a> {
             // Insert the E:SourceC -> E':SourceC edge with a factor of 1.0.
             {
                 let info = self.add_edge(
-                    price_update.exchange.clone(),
-                    price_update.source_currency.clone(),
-                    other_exchange.clone(),
-                    price_update.source_currency.clone(),
+                    price_update.exchange,
+                    price_update.source_currency,
+                    other_exchange,
+                    price_update.source_currency,
                     DECIMAL_ONE,
                     price_update.timestamp,
                 );
@@ -370,10 +425,10 @@ impl<'a> Graph<'a> {
             // Insert the E:DestinationC -> E':DestinationC edge with a factor of 1.0
             {
                 let info = self.add_edge(
-                    price_update.exchange.clone(),
-                    price_update.destination_currency.clone(),
-                    other_exchange.clone(),
-                    price_update.destination_currency.clone(),
+                    price_update.exchange,
+                    price_update.destination_currency,
+                    other_exchange,
+                    price_update.destination_currency,
                     DECIMAL_ONE,
                     price_update.timestamp,
                 );
@@ -388,10 +443,10 @@ impl<'a> Graph<'a> {
             // Insert the E':SourceC -> E:SourceC edge with a factor of 1.0
             {
                 let info = self.add_edge(
-                    other_exchange.clone(),
-                    price_update.source_currency.clone(),
-                    price_update.exchange.clone(),
-                    price_update.source_currency.clone(),
+                    other_exchange,
+                    price_update.source_currency,
+                    price_update.exchange,
+                    price_update.source_currency,
                     DECIMAL_ONE,
                     price_update.timestamp,
                 );
@@ -407,9 +462,9 @@ impl<'a> Graph<'a> {
             {
                 let info = self.add_edge(
                     other_exchange,
-                    price_update.destination_currency.clone(),
-                    price_update.exchange.clone(),
-                    price_update.destination_currency.clone(),
+                    price_update.destination_currency,
+                    price_update.exchange,
+                    price_update.destination_currency,
                     DECIMAL_ONE,
                     price_update.timestamp,
                 );
@@ -458,6 +513,9 @@ fn main() -> io::Result<()> {
     // The graph structure which we either update or query.
     let mut graph = Graph::default();
 
+    let mut exchange_string_pool = StringPool::default();
+    let mut currency_string_pool = StringPool::default();
+
     loop {
         // Read a line from stdin into the buffer: if an (IO) error occurred then return
         // that, if the input is of length 0 (EOF) then terminate, otherwise continue.
@@ -481,7 +539,11 @@ fn main() -> io::Result<()> {
         // price update, so attempt to parse it as such and update the graph with the
         // information in it.
         if *first_field == "EXCHANGE_RATE_REQUEST" {
-            let exchange_rate_request = match ExchangeRateRequest::try_from(&input[1..]) {
+            let exchange_rate_request = match ExchangeRateRequest::parse(
+                &input[1..],
+                &mut exchange_string_pool,
+                &mut currency_string_pool,
+            ) {
                 Ok(exchange_rate_request) => exchange_rate_request,
                 Err(e) => {
                     // Could not read the exchange rate request, return to the main-loop.
@@ -493,7 +555,11 @@ fn main() -> io::Result<()> {
             statusln!(stderr, "{}", exchange_rate_request);
         } else {
             // Could not read the price update, return to the main-loop.
-            let price_update = match PriceUpdate::try_from(&input[0..]) {
+            let price_update = match PriceUpdate::parse(
+                &input[0..],
+                &mut exchange_string_pool,
+                &mut currency_string_pool,
+            ) {
                 Ok(price_update) => price_update,
                 Err(e) => {
                     errorln!(stderr, "Malformed price update: {:#?}", e);
@@ -505,9 +571,11 @@ fn main() -> io::Result<()> {
 
             // Update the graph with the price update information.
             graph.price_update(price_update);
-        }
 
-        statusln!(stderr, "{}", graph);
+            statusln!(stderr, "Graph: {}", graph);
+            statusln!(stderr, "Exchanges: {}", exchange_string_pool);
+            statusln!(stderr, "Currencies: {}", currency_string_pool);
+        }
 
         buffer.clear();
     }
