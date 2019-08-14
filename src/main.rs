@@ -148,10 +148,10 @@ struct ExchangeRateRequest<'a> {
 #[derive(Debug, Clone, From)]
 enum ExchangeRateRequestParseError {
     Invalid,
-    SourceExchange,
-    SourceCurrency,
-    DestinationExchange,
-    DestinationCurrency,
+    SourceExchangeMissing,
+    SourceCurrencyMissing,
+    DestinationExchangeMissing,
+    DestinationCurrencyMissing,
 }
 
 impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
@@ -164,16 +164,16 @@ impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
 
         let source_exchange = input
             .get(0)
-            .ok_or_else(|| ExchangeRateRequestParseError::SourceExchange)?;
+            .ok_or_else(|| ExchangeRateRequestParseError::SourceExchangeMissing)?;
         let source_currency = input
             .get(1)
-            .ok_or_else(|| ExchangeRateRequestParseError::SourceCurrency)?;
+            .ok_or_else(|| ExchangeRateRequestParseError::SourceCurrencyMissing)?;
         let destination_exchange = input
             .get(2)
-            .ok_or_else(|| ExchangeRateRequestParseError::DestinationExchange)?;
+            .ok_or_else(|| ExchangeRateRequestParseError::DestinationExchangeMissing)?;
         let destination_currency = input
             .get(3)
-            .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrency)?;
+            .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrencyMissing)?;
 
         Ok(Self {
             source_exchange: Exchange::from(Cow::from(String::from(*source_exchange))),
