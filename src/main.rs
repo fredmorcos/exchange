@@ -34,11 +34,7 @@ struct Currency<'a>(Cow<'a, str>);
 
 debug_impl!(Currency<'_>);
 
-#[derive(Display, Clone, Copy, PartialEq, From, Into)]
-struct Factor(Decimal);
-
-debug_impl!(Factor);
-
+type Factor = Decimal;
 type Timestamp = DateTime<chrono::FixedOffset>;
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -128,8 +124,8 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
             exchange: Exchange(Cow::from(String::from(*exchange))),
             source_currency: Currency::from(Cow::from(String::from(*source_currency))),
             destination_currency: Currency::from(Cow::from(String::from(*destination_currency))),
-            forward_factor: Factor::from(forward_factor),
-            backward_factor: Factor::from(backward_factor),
+            forward_factor,
+            backward_factor,
         })
     }
 }
@@ -289,19 +285,17 @@ impl<'a> Graph<'a> {
             .cloned()
             .collect();
 
-        static FACTOR_DECIMAL_ONE: Factor = Factor(DECIMAL_ONE);
-
         for other_exchange in other_exchanges {
             let info = self.add_edge(
                 price_update.exchange.clone(),
                 price_update.source_currency.clone(),
                 other_exchange.clone(),
                 price_update.source_currency.clone(),
-                FACTOR_DECIMAL_ONE,
+                DECIMAL_ONE,
                 price_update.timestamp,
             );
 
-            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+            assert_eq!(info.factor, DECIMAL_ONE);
 
             if info.timestamp < price_update.timestamp {
                 info.timestamp = price_update.timestamp;
@@ -312,11 +306,11 @@ impl<'a> Graph<'a> {
                 price_update.destination_currency.clone(),
                 other_exchange.clone(),
                 price_update.destination_currency.clone(),
-                FACTOR_DECIMAL_ONE,
+                DECIMAL_ONE,
                 price_update.timestamp,
             );
 
-            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+            assert_eq!(info.factor, DECIMAL_ONE);
 
             if info.timestamp < price_update.timestamp {
                 info.timestamp = price_update.timestamp;
@@ -327,11 +321,11 @@ impl<'a> Graph<'a> {
                 price_update.source_currency.clone(),
                 price_update.exchange.clone(),
                 price_update.source_currency.clone(),
-                FACTOR_DECIMAL_ONE,
+                DECIMAL_ONE,
                 price_update.timestamp,
             );
 
-            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+            assert_eq!(info.factor, DECIMAL_ONE);
 
             if info.timestamp < price_update.timestamp {
                 info.timestamp = price_update.timestamp;
@@ -342,11 +336,11 @@ impl<'a> Graph<'a> {
                 price_update.destination_currency.clone(),
                 price_update.exchange.clone(),
                 price_update.destination_currency.clone(),
-                FACTOR_DECIMAL_ONE,
+                DECIMAL_ONE,
                 price_update.timestamp,
             );
 
-            assert_eq!(info.factor, FACTOR_DECIMAL_ONE);
+            assert_eq!(info.factor, DECIMAL_ONE);
 
             if info.timestamp < price_update.timestamp {
                 info.timestamp = price_update.timestamp;
