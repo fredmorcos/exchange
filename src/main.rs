@@ -32,6 +32,8 @@ struct Exchange<'a>(Cow<'a, str>);
 
 debug_impl!(Exchange<'_>);
 
+/// A Currency is just a string, but we declare a separate type to avoid potential
+/// mistakes (e.g. pass a Currency where an Exchange is expected).
 #[derive(Display, Clone, PartialEq, Eq, Hash, From, Into, Deref)]
 struct Currency<'a>(Cow<'a, str>);
 
