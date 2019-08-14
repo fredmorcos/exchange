@@ -9,7 +9,7 @@ use std::collections::HashMap as Map;
 use std::convert::From;
 use std::convert::TryFrom;
 use std::fmt;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 use std::str::FromStr;
 
 static DECIMAL_ONE: Decimal = dec!(1.0);
@@ -349,49 +349,90 @@ impl<'a> Graph<'a> {
     }
 }
 
+/// Print a status line only in the debug build.
 macro_rules! statusln {
-    ($($arg:tt)*) => {
+    ($handle:ident, $($arg:tt)*) => {
         #[cfg(debug_assertions)] {
-            eprint!("[STATUS] ");
-            eprintln!($($arg)*);
+            let _res = write!($handle, "[STATUS] ");
+            let _res = writeln!($handle, $($arg)*);
         }
     };
 }
 
-#[derive(Debug, From)]
-enum ApplicationError {
-    IO(io::Error),
-    InvalidEvent,
-    InvalidExchangeRateRequest(ExchangeRateRequestParseError),
-    InvalidPriceUpdate(PriceUpdateParseError),
+/// Print an error line.
+macro_rules! errorln {
+    ($handle:ident, $($arg:tt)*) => {
+        let _res = write!($handle, "[ERROR]  ");
+        let _res = writeln!($handle, $($arg)*);
+    };
 }
 
-fn main() -> Result<(), ApplicationError> {
+fn main() -> io::Result<()> {
+    // Stdin handle.
     let stdin = io::stdin();
-    let mut stdin_handle = stdin.lock();
+    // Stdin lock handle to avoid locking at each iteration of the main-loop.
+    let mut stdin = stdin.lock();
 
+    // Stderr handle.
+    let stderr = io::stderr();
+    // Stderr lock handle to avoid locking everytime we want to print a status update.
+    let mut stderr = stderr.lock();
+
+    // Buffer to read stdin line-wise into.
     let mut buffer = String::new();
+    // The graph structure which we either update or query.
     let mut graph = Graph::default();
 
     loop {
-        if stdin_handle.read_line(&mut buffer)? == 0 {
-            statusln!("Closing...");
+        // Read a line from stdin into the buffer: if an (IO) error occurred then return
+        // that, if the input is of length 0 (EOF) then terminate, otherwise continue.
+        if stdin.read_line(&mut buffer)? == 0 {
+            statusln!(stderr, "Closing...");
             break;
         }
 
+        // Trim the input and split on whitespace.
         let input: Vec<&str> = buffer.trim().split_whitespace().collect();
-        let first_field = input.get(0).ok_or_else(|| ApplicationError::InvalidEvent)?;
-
-        if *first_field == "EXCHANGE_RATE_REQUEST" {
-            let exchange_rate_request = ExchangeRateRequest::try_from(&input[1..])?;
-            statusln!("{}", exchange_rate_request);
+        // If the input does not have at least 1 field, return to the main-loop.
+        let first_field = if let Some(first_field) = input.get(0) {
+            first_field
         } else {
-            let price_update = PriceUpdate::try_from(&input[0..])?;
-            statusln!("{}", price_update);
+            errorln!(stderr, "Malformed input: must contain at least 1 field");
+            continue;
+        };
+
+        // If the first field says it's an exchange rate request, then attempt to parse it
+        // as an exachange rate request and process its query. Otherwise it must be a
+        // price update, so attempt to parse it as such and update the graph with the
+        // information in it.
+        if *first_field == "EXCHANGE_RATE_REQUEST" {
+            let exchange_rate_request = match ExchangeRateRequest::try_from(&input[1..]) {
+                Ok(exchange_rate_request) => exchange_rate_request,
+                Err(e) => {
+                    // Could not read the exchange rate request, return to the main-loop.
+                    errorln!(stderr, "Malformed exchange rate request: {:#?}", e);
+                    continue;
+                }
+            };
+
+            statusln!(stderr, "{}", exchange_rate_request);
+        } else {
+            // Could not read the price update, return to the main-loop.
+            let price_update = match PriceUpdate::try_from(&input[0..]) {
+                Ok(price_update) => price_update,
+                Err(e) => {
+                    errorln!(stderr, "Malformed price update: {:#?}", e);
+                    continue;
+                }
+            };
+
+            statusln!(stderr, "{}", price_update);
+
+            // Update the graph with the price update information.
             graph.price_update(price_update);
         }
 
-        statusln!("{}", graph);
+        statusln!(stderr, "{}", graph);
 
         buffer.clear();
     }
