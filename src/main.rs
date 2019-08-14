@@ -67,18 +67,31 @@ struct PriceUpdate<'a> {
 
 #[derive(Debug, Clone, From)]
 enum PriceUpdateParseError {
+    /// When the input has more than 6 fields.
     Invalid,
+    /// If the timestamp field is missing.
     TimestampMissing,
+    /// If there was an error parsing the timestamp.
     Timestamp(chrono::ParseError),
+    /// If the exchange field is missing.
     ExchangeMissing,
+    /// If the source currency field is missing.
     SourceCurrencyMissing,
+    /// If the destination currency field is missing.
     DestinationCurrencyMissing,
+    /// If the forward factor field is missing.
     ForwardFactorMissing,
+    /// If there was an error with the forward factor value.
     ForwardFactorInvalid,
+    /// If there was an error parsing the forward factor.
     ForwardFactor(decimal::Error),
+    /// If the backward factor field is missing.
     BackwardFactorMissing,
+    /// If there was an error with the backward factor value.
     BackwardFactorInvalid,
+    /// If there was an error parsing the backward factor.
     BackwardFactor(decimal::Error),
+    /// If the product of factors is > 1.0.
     FactorsInvalid,
 }
 
@@ -86,10 +99,13 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
     type Error = PriceUpdateParseError;
 
     fn try_from(input: &[&str]) -> Result<Self, Self::Error> {
+        // Check that the input has at most 6 fields.
         if input.len() > 6 {
             return Err(PriceUpdateParseError::Invalid);
         }
 
+        // Get each field and if it cannot be found, return the corresponding
+        // field-missing error.
         let timestamp = input
             .get(0)
             .ok_or_else(|| PriceUpdateParseError::TimestampMissing)?;
@@ -109,15 +125,19 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
             .get(5)
             .ok_or_else(|| PriceUpdateParseError::BackwardFactorMissing)?;
 
+        // Try to parse the factors and return the corresponding parsing errors.
         let forward_factor =
             Decimal::from_str(forward_factor).map_err(PriceUpdateParseError::ForwardFactor)?;
         let backward_factor =
             Decimal::from_str(backward_factor).map_err(PriceUpdateParseError::BackwardFactor)?;
 
+        // Ensure that the product of factors is <= 1.0.
         if forward_factor * backward_factor > DECIMAL_ONE {
             return Err(PriceUpdateParseError::FactorsInvalid);
         }
 
+        // If the source and destination currencies are the same, both the forward and
+        // backward factors _must_ be = 1.0.
         if source_currency == destination_currency {
             if forward_factor != DECIMAL_ONE {
                 return Err(PriceUpdateParseError::ForwardFactorInvalid);
@@ -128,6 +148,8 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
             }
         }
 
+        // Parse what remains and return the corresponding errors on failure, or return
+        // the constructed price update structure.
         Ok(Self {
             timestamp: Timestamp::parse_from_rfc3339(timestamp)?,
             exchange: Exchange::from(Cow::from(String::from(*exchange))),
