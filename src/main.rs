@@ -25,6 +25,8 @@ macro_rules! debug_impl {
     };
 }
 
+/// An Exchange is just a string, but we declare a separate type to avoid potential
+/// mistakes (e.g. pass an Exchange where a Currency is expected).
 #[derive(Display, Clone, PartialEq, Eq, Hash, From, Into, Deref)]
 struct Exchange<'a>(Cow<'a, str>);
 
