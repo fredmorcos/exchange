@@ -11,6 +11,7 @@ use std::fmt;
 use std::io::{self, BufRead, Write};
 use std::str::FromStr;
 
+/// A decimal 1.0 which we need to reuse a few times.
 static DECIMAL_ONE: Decimal = dec!(1.0);
 
 macro_rules! debug_impl {
