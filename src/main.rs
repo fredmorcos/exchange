@@ -225,9 +225,9 @@ impl TryFrom<&[&str]> for ExchangeRateRequest<'_> {
     }
 }
 
-/// A Path is like a marker that identifies an (Exchange, Currency) pair.
+/// A Marker that identifies an (Exchange, Currency) pair.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Path<'a> {
+struct Marker<'a> {
     exchange: Exchange<'a>,
     currency: Currency<'a>,
 }
@@ -246,7 +246,7 @@ struct Info {
 /// Info structure: factor and timestamp).
 #[derive(Debug, Default, Clone, PartialEq)]
 struct Graph<'a> {
-    exchanges: Map<Exchange<'a>, Map<Currency<'a>, Map<Path<'a>, Info>>>,
+    exchanges: Map<Exchange<'a>, Map<Currency<'a>, Map<Marker<'a>, Info>>>,
 }
 
 impl fmt::Display for Graph<'_> {
@@ -287,7 +287,7 @@ impl<'a> Graph<'a> {
         timestamp: Timestamp,
     ) -> &mut Info {
         // Create the (Exchange, Currency) pair.
-        let destination = Path {
+        let destination = Marker {
             exchange: destination_exchange,
             currency: destination_currency,
         };
