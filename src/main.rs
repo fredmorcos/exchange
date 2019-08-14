@@ -236,7 +236,7 @@ struct Path<'a> {
 /// update that created or last updated it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Info {
-    factor: Factor,
+    rate: Factor,
     timestamp: Timestamp,
 }
 
@@ -261,7 +261,7 @@ impl fmt::Display for Graph<'_> {
                     writeln!(
                         f,
                         "  {} ┈{}⤑ {}({}) @{}",
-                        currency, info.factor, dst.exchange, dst.currency, info.timestamp
+                        currency, info.rate, dst.exchange, dst.currency, info.timestamp
                     )?;
                 }
             }
@@ -283,7 +283,7 @@ impl<'a> Graph<'a> {
         source_currency: Currency<'a>,
         destination_exchange: Exchange<'a>,
         destination_currency: Currency<'a>,
-        factor: Factor,
+        rate: Factor,
         timestamp: Timestamp,
     ) -> &mut Info {
         // Create the (Exchange, Currency) pair.
@@ -292,7 +292,7 @@ impl<'a> Graph<'a> {
             currency: destination_currency,
         };
 
-        let info = Info { factor, timestamp };
+        let info = Info { rate, timestamp };
 
         // Insert or return the already available Info structure.
         self.exchanges
@@ -318,7 +318,7 @@ impl<'a> Graph<'a> {
             );
 
             if info.timestamp < price_update.timestamp {
-                info.factor = price_update.forward_factor;
+                info.rate = price_update.forward_factor;
                 info.timestamp = price_update.timestamp;
             }
         }
@@ -335,7 +335,7 @@ impl<'a> Graph<'a> {
             );
 
             if info.timestamp < price_update.timestamp {
-                info.factor = price_update.backward_factor;
+                info.rate = price_update.backward_factor;
                 info.timestamp = price_update.timestamp;
             }
         }
@@ -360,7 +360,7 @@ impl<'a> Graph<'a> {
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.rate, DECIMAL_ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -378,7 +378,7 @@ impl<'a> Graph<'a> {
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.rate, DECIMAL_ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -396,7 +396,7 @@ impl<'a> Graph<'a> {
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.rate, DECIMAL_ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -414,7 +414,7 @@ impl<'a> Graph<'a> {
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.factor, DECIMAL_ONE);
+                assert_eq!(info.rate, DECIMAL_ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
