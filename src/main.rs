@@ -41,6 +41,8 @@ debug_impl!(Currency<'_>);
 
 /// A forward or backward factor.
 type Factor = Decimal;
+
+/// A timestamp with offset.
 type Timestamp = DateTime<chrono::FixedOffset>;
 
 #[derive(Debug, Display, Clone, PartialEq)]
