@@ -14,6 +14,7 @@ use std::str::FromStr;
 /// A decimal 1.0 which we need to reuse a few times.
 static DECIMAL_ONE: Decimal = dec!(1.0);
 
+/// Generate a Debug implementation for structs with a single unnamed field.
 macro_rules! debug_impl {
     ($name:ty) => {
         impl std::fmt::Debug for $name {
