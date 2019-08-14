@@ -39,6 +39,7 @@ struct Currency<'a>(Cow<'a, str>);
 
 debug_impl!(Currency<'_>);
 
+/// A forward or backward factor.
 type Factor = Decimal;
 type Timestamp = DateTime<chrono::FixedOffset>;
 
