@@ -161,6 +161,7 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
     }
 }
 
+/// Exchange rate requests will come as follows: SRC_E SRC_C DST_E DST_C.
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display(
     fmt = "EXCHANGE RATE REQUEST {}({}) {}({})",
