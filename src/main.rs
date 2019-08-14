@@ -121,7 +121,7 @@ impl TryFrom<&[&str]> for PriceUpdate<'_> {
 
         Ok(Self {
             timestamp: Timestamp::parse_from_rfc3339(timestamp)?,
-            exchange: Exchange(Cow::from(String::from(*exchange))),
+            exchange: Exchange::from(Cow::from(String::from(*exchange))),
             source_currency: Currency::from(Cow::from(String::from(*source_currency))),
             destination_currency: Currency::from(Cow::from(String::from(*destination_currency))),
             forward_factor,
