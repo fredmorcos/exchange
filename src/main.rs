@@ -4,7 +4,7 @@ use chrono::{self, DateTime};
 use derive_more::{Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
 use rust_decimal_macros::dec;
-use std::collections::HashMap as Map;
+use std::collections::{HashMap as Map, HashSet as Set};
 use std::convert::From;
 use std::fmt;
 use std::io::{self, BufRead, Write};
@@ -302,6 +302,7 @@ struct Info {
 #[derive(Debug, Default, Clone, PartialEq)]
 struct Graph {
     exchanges: Map<Exchange, Map<Currency, Map<Marker, Info>>>,
+    nexts: Map<(Marker, Marker), Marker>,
 }
 
 impl fmt::Display for Graph {
@@ -473,6 +474,104 @@ impl Graph {
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
+                }
+            }
+        }
+
+        self.update();
+    }
+
+    /// Update the rates and next fields in the graph.
+    fn update(&mut self) {
+        self.nexts.clear();
+
+        let mut rates: Map<(Marker, Marker), Factor> = Map::new();
+        let mut verts: Set<Marker> = Set::new();
+
+        for (source_exchange, source_currencies) in &self.exchanges {
+            for (source_currency, destinations) in source_currencies {
+                for (destination, info) in destinations {
+                    let source = Marker {
+                        exchange: *source_exchange,
+                        currency: *source_currency,
+                    };
+
+                    if let Some(previous) = rates.insert((source, *destination), info.rate) {
+                        unreachable!(
+                            "Found a redundant entry: {}. It is better to panic here \
+                             than to let the program continue running with invalid state.",
+                            previous
+                        );
+                    }
+
+                    if let Some(previous) = self
+                        .nexts
+                        .insert((source, *destination), destination.clone())
+                    {
+                        unreachable!(
+                            "Found a redundant entry: {}. It is better to panic here \
+                             than to let the program continue running with invalid state.",
+                            previous
+                        );
+                    }
+
+                    verts.insert(source);
+                    verts.insert(destination.clone());
+                }
+            }
+        }
+
+        for &k in &verts {
+            for &i in &verts {
+                if i == k {
+                    continue;
+                }
+
+                let rate_ik = rates.get(&(i, k)).copied();
+
+                for &j in &verts {
+                    if i == j || j == k {
+                        continue;
+                    }
+
+                    let rate_ij = rates.get(&(i, j)).copied();
+                    let rate_kj = rates.get(&(k, j)).copied();
+
+                    match (rate_ij, rate_ik, rate_kj) {
+                        (_, _, None) | (_, None, _) => {}
+                        (None, Some(rate_ik), Some(rate_kj)) => {
+                            rates.insert((i, j), rate_ik * rate_kj);
+
+                            let next_ik = if let Some(next_ik) = self.nexts.get(&(i, k)) {
+                                *next_ik
+                            } else {
+                                unreachable!(
+                                    "There is a missing nexts entry for (i, k). It is better to panic here \
+                                     than to let the program continue running with an invalid graph."
+                                );
+                            };
+
+                            self.nexts.insert((i, j), next_ik);
+                        }
+                        (Some(rate_ij), Some(rate_ik), Some(rate_kj)) => {
+                            let new_rate = rate_ik * rate_kj;
+
+                            if rate_ij < new_rate {
+                                rates.insert((i, j), new_rate);
+
+                                let next_ik = if let Some(next_ik) = self.nexts.get(&(i, k)) {
+                                    *next_ik
+                                } else {
+                                    unreachable!(
+                                        "There is a missing nexts entry for (i, k). It is better to panic here \
+                                         than to let the program continue running with an invalid graph."
+                                    );
+                                };
+
+                                self.nexts.insert((i, j), next_ik);
+                            }
+                        }
+                    }
                 }
             }
         }
