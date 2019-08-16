@@ -610,8 +610,10 @@ macro_rules! statusln {
 /// Print an error line.
 macro_rules! errorln {
     ($handle:ident, $($arg:tt)*) => {
-        let _res = write!($handle, "[ERROR]  ");
-        let _res = writeln!($handle, $($arg)*);
+        {
+            let _res = write!($handle, "[ERROR]  ");
+            let _res = writeln!($handle, $($arg)*);
+        }
     };
 }
 
