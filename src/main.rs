@@ -53,6 +53,10 @@ impl<I: From<usize> + Copy> StringPool<I> {
         self.add(String::from(s))
     }
 
+    fn get_index(&self, s: &str) -> Option<I> {
+        self.indexes.get(&Rc::new(String::from(s))).copied()
+    }
+
     fn get(&self, index: I) -> &str
     where
         usize: From<I>,
