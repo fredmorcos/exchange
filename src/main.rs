@@ -38,8 +38,8 @@ impl<I: Into<usize>> fmt::Display for StringPool<I> {
 
 impl<I: From<usize> + Copy> StringPool<I> {
     fn add(&mut self, s: String) -> I {
-        if let Some(index) = self.indexes.get(&s) {
-            *index
+        if let Some(&index) = self.indexes.get(&s) {
+            index
         } else {
             let index = I::from(self.strings.len());
             let s = Rc::new(s);
@@ -420,7 +420,7 @@ impl Graph {
             .exchanges
             .keys()
             .filter(|&e| e != &price_update.exchange)
-            .cloned()
+            .copied()
             .collect();
 
         for other_exchange in other_exchanges {
@@ -507,15 +507,15 @@ impl Graph {
 
         let mut verts: Set<Marker> = Set::new();
 
-        for (source_exchange, source_currencies) in &self.exchanges {
-            for (source_currency, destinations) in source_currencies {
-                for (destination, info) in destinations {
+        for (&source_exchange, source_currencies) in &self.exchanges {
+            for (&source_currency, destinations) in source_currencies {
+                for (&destination, info) in destinations {
                     let source = Marker {
-                        exchange: *source_exchange,
-                        currency: *source_currency,
+                        exchange: source_exchange,
+                        currency: source_currency,
                     };
 
-                    if let Some(previous) = rates.insert((source, *destination), info.rate) {
+                    if let Some(previous) = self.rates.insert((source, destination), info.rate) {
                         unreachable!(
                             "Found a redundant entry: {}. It is better to panic here \
                              than to let the program continue running with invalid state.",
@@ -525,7 +525,7 @@ impl Graph {
 
                     if let Some(previous) = self
                         .nexts
-                        .insert((source, *destination), destination.clone())
+                        .insert((source, destination), destination)
                     {
                         unreachable!(
                             "Found a redundant entry: {}. It is better to panic here \
@@ -535,7 +535,7 @@ impl Graph {
                     }
 
                     verts.insert(source);
-                    verts.insert(destination.clone());
+                    verts.insert(destination);
                 }
             }
         }
@@ -546,23 +546,23 @@ impl Graph {
                     continue;
                 }
 
-                let rate_ik = rates.get(&(i, k)).copied();
+                let rate_ik = self.rates.get(&(i, k)).copied();
 
                 for &j in &verts {
                     if i == j || j == k {
                         continue;
                     }
 
-                    let rate_ij = rates.get(&(i, j)).copied();
-                    let rate_kj = rates.get(&(k, j)).copied();
+                    let rate_ij = self.rates.get(&(i, j)).copied();
+                    let rate_kj = self.rates.get(&(k, j)).copied();
 
                     match (rate_ij, rate_ik, rate_kj) {
                         (_, _, None) | (_, None, _) => {}
                         (None, Some(rate_ik), Some(rate_kj)) => {
-                            rates.insert((i, j), rate_ik * rate_kj);
+                            self.rates.insert((i, j), rate_ik * rate_kj);
 
-                            let next_ik = if let Some(next_ik) = self.nexts.get(&(i, k)) {
-                                *next_ik
+                            let next_ik = if let Some(&next_ik) = self.nexts.get(&(i, k)) {
+                                next_ik
                             } else {
                                 unreachable!(
                                     "There is a missing nexts entry for (i, k). It is better to panic here \
@@ -576,10 +576,10 @@ impl Graph {
                             let new_rate = rate_ik * rate_kj;
 
                             if rate_ij < new_rate {
-                                rates.insert((i, j), new_rate);
+                                self.rates.insert((i, j), new_rate);
 
-                                let next_ik = if let Some(next_ik) = self.nexts.get(&(i, k)) {
-                                    *next_ik
+                                let next_ik = if let Some(&next_ik) = self.nexts.get(&(i, k)) {
+                                    next_ik
                                 } else {
                                     unreachable!(
                                         "There is a missing nexts entry for (i, k). It is better to panic here \
@@ -683,10 +683,11 @@ fn main() -> io::Result<()> {
         // Trim the input and split on whitespace.
         let input: Vec<&str> = buffer.trim().split_whitespace().collect();
         // If the input does not have at least 1 field, return to the main-loop.
-        let first_field = if let Some(first_field) = input.get(0) {
+        let first_field = if let Some(&first_field) = input.get(0) {
             first_field
         } else {
             errorln!(stderr, "Malformed input: must contain at least 1 field");
+            buffer.clear();
             continue;
         };
 
@@ -694,8 +695,8 @@ fn main() -> io::Result<()> {
         // as an exachange rate request and process its query. Otherwise it must be a
         // price update, so attempt to parse it as such and update the graph with the
         // information in it.
-        if *first_field == "EXCHANGE_RATE_REQUEST" {
-            let exchange_rate_request = match ExchangeRateRequest::parse(
+        if first_field == "EXCHANGE_RATE_REQUEST" {
+            match ExchangeRateRequest::parse(
                 &input[1..],
                 &mut exchange_string_pool,
                 &mut currency_string_pool,
