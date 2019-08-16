@@ -321,6 +321,7 @@ struct Info {
 struct Graph {
     exchanges: Map<Exchange, Map<Currency, Map<Marker, Info>>>,
     nexts: Map<(Marker, Marker), Marker>,
+    rates: Map<(Marker, Marker), Factor>,
 }
 
 impl fmt::Display for Graph {
@@ -502,8 +503,8 @@ impl Graph {
     /// Update the rates and next fields in the graph.
     fn update(&mut self) {
         self.nexts.clear();
+        self.rates.clear();
 
-        let mut rates: Map<(Marker, Marker), Factor> = Map::new();
         let mut verts: Set<Marker> = Set::new();
 
         for (source_exchange, source_currencies) in &self.exchanges {
