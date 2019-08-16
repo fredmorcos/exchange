@@ -595,6 +595,42 @@ impl Graph {
             }
         }
     }
+
+    fn exchange_rate_request(&self, exchange_rate_request: ExchangeRateRequest) -> Option<(Vec<Marker>, Factor)> {
+        let mut source = Marker {
+            exchange: exchange_rate_request.source_exchange,
+            currency: exchange_rate_request.source_currency,
+        };
+
+        let destination = Marker {
+            exchange: exchange_rate_request.destination_exchange,
+            currency: exchange_rate_request.destination_currency,
+        };
+
+        let vertex = (source, destination);
+
+        let rate = if let Some(&rate) = self.rates.get(&vertex) {
+            rate
+        } else {
+            return None;
+        };
+
+        self.nexts.get(&vertex)?;
+
+        let mut path = vec![source];
+
+        while source != destination {
+            source = if let Some(&next) = self.nexts.get(&(source, destination)) {
+                next
+            } else {
+                return None;
+            };
+
+            path.push(source);
+        }
+
+        Some((path, rate))
+    }
 }
 
 /// Print a status line only in the debug build.
@@ -664,37 +700,50 @@ fn main() -> io::Result<()> {
                 &mut exchange_string_pool,
                 &mut currency_string_pool,
             ) {
-                Ok(exchange_rate_request) => exchange_rate_request,
-                Err(e) => {
-                    // Could not read the exchange rate request, return to the main-loop.
-                    errorln!(stderr, "Malformed exchange rate request: {:#?}", e);
-                    continue;
-                }
-            };
+                Err(e) => errorln!(stderr, "Malformed exchange rate request: {:#?}", e),
+                Ok(exchange_rate_request) => {
+                    statusln!(stderr, "{}", exchange_rate_request);
 
-            statusln!(stderr, "{}", exchange_rate_request);
+                    if let Some((path, rate)) = graph.exchange_rate_request(exchange_rate_request) {
+                        println!(
+                            "BEST_RATES_BEGIN {} {} {} {} {}",
+                            exchange_string_pool.get(exchange_rate_request.source_exchange),
+                            currency_string_pool.get(exchange_rate_request.source_currency),
+                            exchange_string_pool.get(exchange_rate_request.destination_exchange),
+                            currency_string_pool.get(exchange_rate_request.destination_currency),
+                            rate,
+                        );
+                        for node in path {
+                            println!(
+                                "{} {}",
+                                exchange_string_pool.get(node.exchange),
+                                currency_string_pool.get(node.currency)
+                            );
+                        }
+                        println!("BEST_RATES_END");
+                    } else {
+                        errorln!(stderr, "Cannot calculate rate");
+                    }
+                }
+            }
         } else {
-            // Could not read the price update, return to the main-loop.
-            let price_update = match PriceUpdate::parse(
+            match PriceUpdate::parse(
                 &input[0..],
                 &mut exchange_string_pool,
                 &mut currency_string_pool,
             ) {
-                Ok(price_update) => price_update,
-                Err(e) => {
-                    errorln!(stderr, "Malformed price update: {:#?}", e);
-                    continue;
+                Err(e) => errorln!(stderr, "Malformed price update: {:#?}", e),
+                Ok(price_update) => {
+                    statusln!(stderr, "{}", price_update);
+
+                    // Update the graph with the price update information.
+                    graph.price_update(price_update);
+
+                    statusln!(stderr, "Graph: {}", graph);
+                    statusln!(stderr, "Exchanges: {}", exchange_string_pool);
+                    statusln!(stderr, "Currencies: {}", currency_string_pool);
                 }
-            };
-
-            statusln!(stderr, "{}", price_update);
-
-            // Update the graph with the price update information.
-            graph.price_update(price_update);
-
-            statusln!(stderr, "Graph: {}", graph);
-            statusln!(stderr, "Exchanges: {}", exchange_string_pool);
-            statusln!(stderr, "Currencies: {}", currency_string_pool);
+            }
         }
 
         buffer.clear();
