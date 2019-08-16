@@ -164,22 +164,20 @@ impl PriceUpdate {
         // field-missing error.
         let timestamp = input
             .get(0)
-            .ok_or_else(|| PriceUpdateParseError::TimestampMissing)?;
-        let exchange = input
-            .get(1)
-            .ok_or_else(|| PriceUpdateParseError::ExchangeMissing)?;
+            .ok_or(PriceUpdateParseError::TimestampMissing)?;
+        let exchange = input.get(1).ok_or(PriceUpdateParseError::ExchangeMissing)?;
         let source_currency = input
             .get(2)
-            .ok_or_else(|| PriceUpdateParseError::SourceCurrencyMissing)?;
+            .ok_or(PriceUpdateParseError::SourceCurrencyMissing)?;
         let destination_currency = input
             .get(3)
-            .ok_or_else(|| PriceUpdateParseError::DestinationCurrencyMissing)?;
+            .ok_or(PriceUpdateParseError::DestinationCurrencyMissing)?;
         let forward_factor = input
             .get(4)
-            .ok_or_else(|| PriceUpdateParseError::ForwardFactorMissing)?;
+            .ok_or(PriceUpdateParseError::ForwardFactorMissing)?;
         let backward_factor = input
             .get(5)
-            .ok_or_else(|| PriceUpdateParseError::BackwardFactorMissing)?;
+            .ok_or(PriceUpdateParseError::BackwardFactorMissing)?;
 
         // Try to parse the factors and return the corresponding parsing errors.
         let forward_factor =
@@ -218,7 +216,7 @@ impl PriceUpdate {
 }
 
 /// Exchange rate requests will come as follows: SRC_E SRC_C DST_E DST_C.
-#[derive(Debug, Display, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, Copy, PartialEq)]
 #[display(
     fmt = "EXCHANGE RATE REQUEST {}({}) {}({})",
     source_exchange,
@@ -239,12 +237,20 @@ enum ExchangeRateRequestParseError {
     Invalid,
     /// If the source exchange field is missing.
     SourceExchangeMissing,
+    /// If the source exchange name is unknown
+    SourceExchangeUnknown,
     /// If the source currency field is missing.
     SourceCurrencyMissing,
+    /// If the source currency name is unknown
+    SourceCurrencyUnknown,
     /// If the destination exchange field is missing.
     DestinationExchangeMissing,
+    /// If the destination exchange name is unknown
+    DestinationExchangeUnknown,
     /// If the destination currency field is missing.
     DestinationCurrencyMissing,
+    /// If the destination currency name is unknown
+    DestinationCurrencyUnknown,
 }
 
 impl ExchangeRateRequest {
@@ -262,23 +268,31 @@ impl ExchangeRateRequest {
         // field-missing error.
         let source_exchange = input
             .get(0)
-            .ok_or_else(|| ExchangeRateRequestParseError::SourceExchangeMissing)?;
+            .ok_or(ExchangeRateRequestParseError::SourceExchangeMissing)?;
         let source_currency = input
             .get(1)
-            .ok_or_else(|| ExchangeRateRequestParseError::SourceCurrencyMissing)?;
+            .ok_or(ExchangeRateRequestParseError::SourceCurrencyMissing)?;
         let destination_exchange = input
             .get(2)
-            .ok_or_else(|| ExchangeRateRequestParseError::DestinationExchangeMissing)?;
+            .ok_or(ExchangeRateRequestParseError::DestinationExchangeMissing)?;
         let destination_currency = input
             .get(3)
-            .ok_or_else(|| ExchangeRateRequestParseError::DestinationCurrencyMissing)?;
+            .ok_or(ExchangeRateRequestParseError::DestinationCurrencyMissing)?;
 
         // Return the constructed exchange rate request structure.
         Ok(Self {
-            source_exchange: exchange_string_pool.add_str(source_exchange),
-            source_currency: currency_string_pool.add_str(source_currency),
-            destination_exchange: exchange_string_pool.add_str(destination_exchange),
-            destination_currency: currency_string_pool.add_str(destination_currency),
+            source_exchange: exchange_string_pool
+                .get_index(source_exchange)
+                .ok_or(ExchangeRateRequestParseError::SourceExchangeUnknown)?,
+            source_currency: currency_string_pool
+                .get_index(source_currency)
+                .ok_or(ExchangeRateRequestParseError::SourceCurrencyUnknown)?,
+            destination_exchange: exchange_string_pool
+                .get_index(destination_exchange)
+                .ok_or(ExchangeRateRequestParseError::DestinationExchangeUnknown)?,
+            destination_currency: currency_string_pool
+                .get_index(destination_currency)
+                .ok_or(ExchangeRateRequestParseError::DestinationCurrencyUnknown)?,
         })
     }
 }
