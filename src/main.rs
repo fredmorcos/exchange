@@ -3,7 +3,6 @@
 use chrono::{self, DateTime};
 use derive_more::{Display, From, Into};
 use rust_decimal::{self as decimal, Decimal};
-use rust_decimal_macros::dec;
 use std::collections::{HashMap as Map, HashSet as Set};
 use std::convert::From;
 use std::fmt;
@@ -64,9 +63,6 @@ impl<I: From<usize> + Copy> StringPool<I> {
         &self.strings[usize::from(index)]
     }
 }
-
-/// A decimal 1.0 which we need to reuse a few times.
-static DECIMAL_ONE: Decimal = dec!(1.0);
 
 /// Generate a Debug implementation for structs with a single unnamed field.
 macro_rules! debug_impl {
@@ -186,18 +182,18 @@ impl PriceUpdate {
             Decimal::from_str(backward_factor).map_err(PriceUpdateParseError::BackwardFactor)?;
 
         // Ensure that the product of factors is <= 1.0.
-        if forward_factor * backward_factor > DECIMAL_ONE {
+        if forward_factor * backward_factor > Decimal::ONE {
             return Err(PriceUpdateParseError::FactorsInvalid);
         }
 
         // If the source and destination currencies are the same, both the forward and
         // backward factors _must_ be = 1.0.
         if source_currency == destination_currency {
-            if forward_factor != DECIMAL_ONE {
+            if forward_factor != Decimal::ONE {
                 return Err(PriceUpdateParseError::ForwardFactorInvalid);
             }
 
-            if backward_factor != DECIMAL_ONE {
+            if backward_factor != Decimal::ONE {
                 return Err(PriceUpdateParseError::BackwardFactorInvalid);
             }
         }
@@ -431,11 +427,11 @@ impl Graph {
                     price_update.source_currency,
                     other_exchange,
                     price_update.source_currency,
-                    DECIMAL_ONE,
+                    Decimal::ONE,
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.rate, DECIMAL_ONE);
+                assert_eq!(info.rate, Decimal::ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -449,11 +445,11 @@ impl Graph {
                     price_update.destination_currency,
                     other_exchange,
                     price_update.destination_currency,
-                    DECIMAL_ONE,
+                    Decimal::ONE,
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.rate, DECIMAL_ONE);
+                assert_eq!(info.rate, Decimal::ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -467,11 +463,11 @@ impl Graph {
                     price_update.source_currency,
                     price_update.exchange,
                     price_update.source_currency,
-                    DECIMAL_ONE,
+                    Decimal::ONE,
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.rate, DECIMAL_ONE);
+                assert_eq!(info.rate, Decimal::ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -485,11 +481,11 @@ impl Graph {
                     price_update.destination_currency,
                     price_update.exchange,
                     price_update.destination_currency,
-                    DECIMAL_ONE,
+                    Decimal::ONE,
                     price_update.timestamp,
                 );
 
-                assert_eq!(info.rate, DECIMAL_ONE);
+                assert_eq!(info.rate, Decimal::ONE);
 
                 if info.timestamp < price_update.timestamp {
                     info.timestamp = price_update.timestamp;
@@ -523,10 +519,7 @@ impl Graph {
                         );
                     }
 
-                    if let Some(previous) = self
-                        .nexts
-                        .insert((source, destination), destination)
-                    {
+                    if let Some(previous) = self.nexts.insert((source, destination), destination) {
                         unreachable!(
                             "Found a redundant entry: {}. It is better to panic here \
                              than to let the program continue running with invalid state.",
@@ -596,7 +589,10 @@ impl Graph {
         }
     }
 
-    fn exchange_rate_request(&self, exchange_rate_request: ExchangeRateRequest) -> Option<(Vec<Marker>, Factor)> {
+    fn exchange_rate_request(
+        &self,
+        exchange_rate_request: ExchangeRateRequest,
+    ) -> Option<(Vec<Marker>, Factor)> {
         let mut source = Marker {
             exchange: exchange_rate_request.source_exchange,
             currency: exchange_rate_request.source_currency,
